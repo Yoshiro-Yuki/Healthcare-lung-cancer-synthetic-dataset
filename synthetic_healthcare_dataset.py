@@ -19,14 +19,14 @@ Typical usage example:
 print('Running...\n\n\n\n')
 
 # --- Imports ---------------------------------------------------------------
-from faker import Faker                       # Fake data generator
-from faker.providers import BaseProvider      # Base class for custom providers
-import pandas as pd                           # DataFrame construction
-import numpy as np                            # Seeding numpy's RNG
-from collections import OrderedDict           # Ordered {value: weight} maps
-from joblib import delayed, Parallel          # Multi-process generation
-import time                                   # Benchmark timing
-import os                                     # CPU count lookup
+from faker import Faker                       
+from faker.providers import BaseProvider      
+import pandas as pd                          
+import numpy as np                            
+from collections import OrderedDict           
+from joblib import delayed, Parallel          
+import time                                
+import os                                   
 
 
 class Healthcare(BaseProvider):
@@ -124,7 +124,7 @@ class Healthcare(BaseProvider):
       # Advance the counters so the next batch gets fresh, non-overlapping IDs.
       self._batch_tracker += self.batch_length
       remaining -= self.batch_length
-
+    
       yield customer
 
   def _generate_year_distribution(self) -> None:
@@ -480,64 +480,65 @@ class Healthcare(BaseProvider):
 
     return score_list
 
+if __name__ == '__main__':
 
-start = time.perf_counter()
+  start = time.perf_counter()
 
-def generate_data(n, seed):
-  if n <= 0:
-    return pd.DataFrame()
+  def generate_data(n, seed):
+    if n <= 0:
+      return pd.DataFrame()
 
+    faker = Faker()
+    Faker.seed(seed)
+    np.random.seed(seed)
+    hc = Healthcare(generator=faker, dataset_length=n, start_id = 1000001 * (seed+1))
+
+    pd.DataFrame().to_csv(f'file-{seed}.csv', index=False)
+    first=True
+    for b in hc:
+      df = pd.DataFrame(b)
+      print(df.shape)
+      df.to_csv(
+          f'file-{seed}.csv',
+          mode='w' if first else 'a', header=first
+      )
+      first=False
+
+    return None
+
+  df_length = 1000233
+  num_chunks = int(os.cpu_count()) * 2
+
+  df_chunks = [df_length // num_chunks] * num_chunks
+  df_chunks[-1] = df_length - sum(df_chunks[:-1])
+  Parallel(n_jobs=-1)(delayed(generate_data)(rows, seed) for seed, rows in enumerate(df_chunks))
+
+  df_list_pr = list()
+  for i, _ in enumerate(df_chunks):
+    df = pd.read_csv(f'file-{i}.csv')
+    df_list_pr.append(df)
+
+  df_concat = pd.concat(df_list_pr, ignore_index=True)
+  end = time.perf_counter()
+
+  df_concat.to_csv(
+    'updated_synthetic_lung_cancer_dataset_a_2.csv', index=False
+  )
+
+  print(f'parallel: Dataset shape: {df_concat.shape}')
+  print(f'parallel: Number of collisions: {df_concat['Patient_id'].duplicated().sum()}')
+  print(f'parallel: Time of execution: {end - start}')
+
+  start = time.perf_counter()
   faker = Faker()
-  Faker.seed(seed)
-  np.random.seed(seed)
-  hc = Healthcare(generator=faker, dataset_length=n, start_id = 1000001 * (seed+1))
+  hc = Healthcare(generator=faker, dataset_length=1000233)
 
-  pd.DataFrame().to_csv(f'file-{seed}.csv', index=False)
-  first=True
-  for b in hc:
-     df = pd.DataFrame(b)
-     print(df.shape)
-     df.to_csv(
-        f'file-{seed}.csv',
-        mode='w' if first else 'a', header=first
-     )
-     first=False
+  df_list = [pd.DataFrame(b) for b in hc]
 
-  return None
+  df = pd.concat(df_list, ignore_index=True)
+  end = time.perf_counter()
+  print(f'iterative: Dataset shape: {df.shape}')
+  print(f'iterative: Number of collisions: {df['Patient_id'].duplicated().sum()}')
+  print(f'iterative: Time of execution: {end - start}')
 
-df_length = 1000233
-num_chunks = int(os.cpu_count()) * 2
-
-df_chunks = [df_length // num_chunks] * num_chunks
-df_chunks[-1] = df_length - sum(df_chunks[:-1])
-Parallel(n_jobs=-1)(delayed(generate_data)(rows, seed) for seed, rows in enumerate(df_chunks))
-
-df_list_pr = list()
-for i, _ in enumerate(df_chunks):
-   df = pd.read_csv(f'file-{i}.csv')
-   df_list_pr.append(df)
-
-df_concat = pd.concat(df_list_pr, ignore_index=True)
-end = time.perf_counter()
-
-df_concat.to_csv(
-   'updated_synthetic_lung_cancer_dataset_a_2.csv', index=False
-)
-
-print(f'parallel: Dataset shape: {df_concat.shape}')
-print(f'parallel: Number of collisions: {df_concat['Patient_id'].duplicated().sum()}')
-print(f'parallel: Time of execution: {end - start}')
-
-start = time.perf_counter()
-faker = Faker()
-hc = Healthcare(generator=faker, dataset_length=1000233)
-
-df_list = [pd.DataFrame(b) for b in hc]
-
-df = pd.concat(df_list, ignore_index=True)
-end = time.perf_counter()
-print(f'iterative: Dataset shape: {df.shape}')
-print(f'iterative: Number of collisions: {df['Patient_id'].duplicated().sum()}')
-print(f'iterative: Time of execution: {end - start}')
-
-#df.to_csv('updated_synthetic_lung_cancer_dataset_a_1.csv', index=False)
+  #df.to_csv('updated_synthetic_lung_cancer_dataset_a_1.csv', index=False)`
