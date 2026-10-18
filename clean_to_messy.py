@@ -6,7 +6,7 @@ class DirtyDataInjector:
     """Corrupts a clean dataset with nulls, typos and impossible values."""
 
     MIN_NULL_RATE = 0.0263
-    MAX_NULL_RATE = 0.0863
+    MAX_NULL_RATE = 0.0483
 
     NULL_COLUMNS = [
         'Age',

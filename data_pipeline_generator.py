@@ -33,6 +33,7 @@ import polars as pl  # Lazy CSV scan and Parquet sink
 
 from clean_to_messy import DirtyDataInjector  # Dirty-data step
 from synthetic_healthcare_dataset import Healthcare  # Data generator
+from data_cleaning import LungCancerCleaner
 
 # --- Configuration ---------------------------------------------------------
 CLEAN_DIR = "cleaned_folder"  # Per-chunk clean CSV files
@@ -40,7 +41,7 @@ MESSY_DIR = "messy_folder"  # Per-chunk messy CSV files
 CLEAN_PARQUET = "cleaned_data.parquet"  # Final clean output
 MESSY_PARQUET = "messy_data.parquet"  # Final messy output
 
-DF_LENGTH = 5004574  # Total number of rows
+DF_LENGTH = 5004574  # Total number of rows (5004574)
 MIN_CHUNK_ROWS = 10  # Healthcare needs >= 10 rows
 
 
@@ -82,21 +83,25 @@ def generate_data(n, seed):
         generator=faker, dataset_length=n, start_id=1000001 * (seed + 1)
     )
 
-    clean_path = f"{CLEAN_DIR}/file-{seed}.csv"
     messy_path = f"{MESSY_DIR}/file-{seed}.csv"
+    clean_path = f"{CLEAN_DIR}/file-{seed}.csv"
 
     for batch_index, batch in enumerate(hc):
         first = batch_index == 0  # Only the first batch has a header
         mode = "w" if first else "a"
 
-        # Save the clean batch before any corruption happens.
-        clean_df = pd.DataFrame(batch)
-        clean_df.to_csv(clean_path, index=False, mode=mode, header=first)
+        raw_df = pd.DataFrame(batch)
 
         # corrupt() works on a copy, so clean_df is left untouched.
         injector = DirtyDataInjector(seed=seed * 1000 + batch_index)
-        messy_df = injector.corrupt(clean_df)
+        messy_df = injector.corrupt(raw_df)
         messy_df.to_csv(messy_path, index=False, mode=mode, header=first)
+
+        # clean the corrupted file
+        cleaner = LungCancerCleaner()
+        cleaned_df = cleaner.clean(messy_df)
+        cleaned_df.to_csv(clean_path, index=False, mode=mode, header=first)
+
 
 
 def convert_to_parquet(folder, output_path, read_as_text):
