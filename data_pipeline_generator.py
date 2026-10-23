@@ -24,6 +24,7 @@ Typical usage example:
 # --- Imports ---------------------------------------------------------------
 import glob
 import os
+import psutil
 import time
 from faker import Faker  # Random source for the provider
 from joblib import Parallel, delayed
@@ -34,6 +35,7 @@ import polars as pl  # Lazy CSV scan and Parquet sink
 from clean_to_messy import DirtyDataInjector  # Dirty-data step
 from synthetic_healthcare_dataset import Healthcare  # Data generator
 from data_cleaning import LungCancerCleaner
+from mem_tracker import MemoryTracker as mt
 
 # --- Configuration ---------------------------------------------------------
 CLEAN_DIR = "cleaned_folder"  # Per-chunk clean CSV files
@@ -41,7 +43,6 @@ MESSY_DIR = "messy_folder"  # Per-chunk messy CSV files
 CLEAN_PARQUET = "cleaned_data.parquet"  # Final clean output
 MESSY_PARQUET = "messy_data.parquet"  # Final messy output
 
-DF_LENGTH = 5004574  # Total number of rows (5004574)
 MIN_CHUNK_ROWS = 10  # Healthcare needs >= 10 rows
 
 
@@ -128,9 +129,8 @@ def convert_to_parquet(folder, output_path, read_as_text):
     return pl.scan_parquet(output_path).select(pl.len()).collect().item()
 
 
-def main():
+def main(DF_LENGTH=10024574):
     """Runs the full pipeline: generate chunks in parallel, then write Parquet."""
-    start = time.perf_counter()
 
     prepare_folders()
 
@@ -142,7 +142,9 @@ def main():
     Parallel(n_jobs=-1)(
         delayed(generate_data)(rows, seed) for seed, rows in enumerate(df_chunks)
     )
+    
 
+    start_local = time.perf_counter()
     clean_rows = convert_to_parquet(
         CLEAN_DIR, CLEAN_PARQUET, read_as_text=False
     )
@@ -150,12 +152,35 @@ def main():
         MESSY_DIR, MESSY_PARQUET, read_as_text=True
     )
 
-    end = time.perf_counter()
+    end_local = time.perf_counter()
 
+
+    print('='*50)
+    print(f'Benchmark for {DF_LENGTH} rows:')
     print(f"clean: {clean_rows} rows saved to {CLEAN_PARQUET}")
     print(f"messy: {messy_rows} rows saved to {MESSY_PARQUET}")
-    print(f"parallel: Time of execution: {end - start}")
+    print('='*50)
+    print(f"parallel: Time of execution (Lazy loading to parquet) : {(end_local - start_local):.4f} seconds")
+    print('='*50)
+    
 
 
 if __name__ == "__main__":
-    main()
+    for i in [1, 2, 3, 4, 5, 10]:
+        i *= 1000000
+        tracker = mt(interval=0.1)
+
+        start = time.perf_counter()
+        tracker.start()
+
+        main(DF_LENGTH=i)
+
+        end = time.perf_counter()
+        generation_peak_kb = tracker.stop()
+
+        print(f"parallel: Time of execution (Total): {(end - start):.4f} seconds")
+        print(f"parallel: Time of execution (Total): {(generation_peak_kb):.8f} kb")
+        print('='*50)
+        print('\n\n\n\n')
+
+    

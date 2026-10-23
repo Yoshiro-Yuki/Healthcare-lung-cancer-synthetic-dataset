@@ -16,8 +16,6 @@ Typical usage example:
     python synthetic_healthcare_dataset.py
 """
 
-print('Running...\n\n\n\n')
-
 # --- Imports ---------------------------------------------------------------
 from faker import Faker                       
 from faker.providers import BaseProvider      
@@ -70,11 +68,11 @@ class Healthcare(BaseProvider):
     # Number of records per batch (integer division by the percentage value).
     self.batch_length = int(self.dataset_length // self._batch_size)
     # Minimum risk score required for a "Positive" diagnosis.
-    self.threshold = 6.5
+    self.threshold = 9.5
 
     # Weights for binary (0/1) features. Faker normalizes these weights, so
     # they do not need to sum to 1.
-    self.cld_p_true, self.cld_p_false = 0.1029, 0.1029   # Chronic lung disease
+    self.cld_p_true, self.cld_p_false = 0.1029, 0.8971  # Chronic lung disease
     self.cp_p_true, self.cp_p_false = 0.2743, 0.7257     # Chest pain
     self.sb_p_true, self.sb_p_false = 0.3819, 0.6181     # Shortness of breath
 
@@ -101,14 +99,14 @@ class Healthcare(BaseProvider):
       self.cache_year_list = self._generate_year_distribution()
       # Smoking status and pack-years are generated together because
       # pack-years depends on the status.
-      smoking_status_data, pack_years_data = self.generate_status_pack()
+      age_list, gender_list ,smoking_status_data, pack_years_data = self._call_generate_status_pack()
       customer = {
         'Patient_id':self.patient_record_id(id_type='patient'),
         'Record_id':self.patient_record_id(id_type='record'),
         'branch_id':self.generate_branch_id(),
         'Visit_date':self.generate_date(),
-        'Age':self.generate_age(),
-        'Gender':self.generate_gender(),
+        'Age':age_list,
+        'Gender':gender_list,
         'Smoking_status':smoking_status_data,
         'Pack_years':pack_years_data,
         'Air_pollution_exposure':self.generate_exposure(),
@@ -183,7 +181,7 @@ class Healthcare(BaseProvider):
       A list of branch ID strings (e.g. ``'NE-1565'``).
     """
     self._branches = OrderedDict([
-        ('NE-1565',0.25),('NW-6754',0.25),('SE-6239',0.25),('SW-4543',0.25)
+        ('NE-1565',0.37),('NW-6754',0.31),('SE-6239',0.12),('SW-4543',0.20)
     ])
     return [self.generator.random_element(self._branches) for _ in range(self.batch_length)]
 
@@ -223,20 +221,20 @@ class Healthcare(BaseProvider):
     Returns:
       A list of integer ages, one per record.
     """
-    age_list = list()
+    self.age_list = list()
     # Bracket labels are "min-max" strings; they are sliced below to get bounds.
     self._age_weights = OrderedDict([
-        ('01-20',0.0007),('20-34',0.0019),('35-44',0.0194),('45-54', 0.0883),('55-64',0.2097),('65-74',0.3186),('75-84',0.2892),('85-100',0.0722)
+        ('01-20',0.0007),('21-34',0.0019),('35-44',0.0194),('45-54', 0.0883),('55-64',0.2097),('65-74',0.3186),('75-84',0.2892),('85-100',0.0722)
     ])
 
     for _ in range(self.batch_length):
       random_age_category = self.generator.random_element(self._age_weights)
       # [:2] is the lower bound and [3:] is the upper bound of the label.
-      age_list.append(
+      self.age_list.append(
           self.generator.random_int(min=int(random_age_category[:2]), max=int(random_age_category[3:]))
       )
 
-    return age_list
+    return 'Use obj._call_generate_status_pack() to get result'
 
   def generate_gender(self):
     """Randomly assigns a gender to each record.
@@ -246,7 +244,16 @@ class Healthcare(BaseProvider):
     """
     self._gender_weights = OrderedDict([
         ('Male', 0.5534),('Female',0.4466)])
-    return [self.generator.random_element(self._gender_weights) for _ in range(self.batch_length)]
+
+    self.gender_list = [self.generator.random_element(self._gender_weights) for _ in range(self.batch_length)]
+
+    return 'Use obj._call_generate_status_pack() to get result'
+
+  def _call_generate_status_pack(self):
+     self.generate_gender()
+     self.generate_age()
+     status_list, pack_list = self.generate_status_pack()
+     return self.age_list, self.gender_list, status_list, pack_list
 
   def generate_status_pack(self):
     """Generates smoking status together with matching pack-years.
@@ -265,20 +272,30 @@ class Healthcare(BaseProvider):
         ('Former',0.5083),('Current',0.3672),('Never',0.1247)
     ])
 
-    for _ in range(self.batch_length):
+    for yr, gender in zip(self.age_list, self.gender_list):
       random_status = str(self.generator.random_element(self._smoking_weights))
 
       # Pack-years are tied to the sampled smoking status.
-      if random_status == 'Former':
-        packs = self.generator.random_int(min=15,max=25)
+      if yr < 16:
+          random_status = 'Never'
+          packs = 0
+      elif (yr > 16 and yr < 24) and (random_status == 'Former'):
+          packs = self.generator.random_int(min=1, max=10)
+      elif (yr > 16 and yr < 24) and (random_status == 'Current'):
+                packs = self.generator.random_int(min=0, max=20)
+      elif random_status == 'Former':
+          packs = self.generator.random_int(min=1, max=40)
       elif random_status == 'Current':
-        packs = self.generator.random_int(min=25,max=30)
+          packs = self.generator.random_int(min=10, max=60)
       else:
-        packs = 0
+          packs = 0
 
+      # Penalty if Female is smoker, adjusting to global facts
+      if gender == "Female":
+         packs *= 0.7
+        
       status_list.append(random_status)
       pack_list.append(packs)
-
 
     return status_list, pack_list
 
